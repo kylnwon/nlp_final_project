@@ -23,8 +23,6 @@ Our methodology involves:
 
 By quantifying and visualizing gender bias across different models, this study aims to contribute to a better understanding of LLM fairness and inform future bias mitigation strategies.  
 
----
-
 ## **Progress made so far**  
 Since the original proposal, we have successfully:  
 
@@ -38,8 +36,6 @@ Next steps include:
 - **Cleaning and preprocessing** the dataset to ensure consistency.  
 - **Performing statistical analysis** to compare model outputs against real-world gender distributions.  
 - **Evaluating patterns** in model bias, including syntactic ordering effects and overcorrection tendencies.  
-
----
 
 ## **Approach**  
 
@@ -55,8 +51,6 @@ Our primary baseline is **real-world labor statistics from the BLS**, which prov
 
 ### **Novelty**  
 Prior work has investigated gender bias in LLMs, but our study uniquely examines whether **instruction tuning itself mitigates or exacerbates bias**. By contrasting instruct vs. base variants within the same model families, we isolate the impact of instruction tuning more precisely than previous work.  
-
----
 
 ## **Experiments**  
 
@@ -81,8 +75,6 @@ To quantify bias, we compute **Mean Absolute Error (MAE)** between model-assigne
 ### **Results**  
 Preliminary results suggest that instruct models may **overcorrect** for biases, sometimes assigning pronouns in ways that deviate significantly from both stereotypes and real-world statistics. However, a full statistical breakdown is still in progress.  
 
----
-
 ## **Remaining tasks**  
 Over the next two weeks, we will:  
 
@@ -92,8 +84,6 @@ Over the next two weeks, we will:
 - **Complete a detailed write-up** synthesizing findings for the final report.  
 
 By refining our analysis and expanding our comparisons, we aim to provide clear insights into how instruction tuning influences bias in LLMs.  
-
----
 
 ## **Ethical considerations**  
 Several ethical concerns are relevant:  

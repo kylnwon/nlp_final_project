@@ -1,0 +1,240 @@
+---
+title: "NLP Data Analysis"
+author: "Arnav Agarwal"
+date: "2025-03-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library(readxl)
+```
+
+```{r}
+combined_df <- NULL
+files <- list.files("Data", pattern = "\\.csv$", full.names = TRUE)
+
+# 3) Define a function to extract the model name from each filename
+extract_model_name <- function(filepath) {
+  # 3a) Get just the filename from the path
+  filename <- basename(filepath)
+  # 3b) Remove the .csv extension
+  no_ext <- sub("\\.csv$", "", filename)
+  return(no_ext)
+}
+
+# 4) Read in each file, add 'model' column, store in a list
+df_list <- lapply(files, function(f) {
+  # Use readr's read_csv for convenience (could also use read.csv)
+  dat <- read_csv(f, show_col_types = FALSE)
+  dat$model <- extract_model_name(f)
+  dat
+})
+
+# 5) Combine all data frames into one
+combined_df <- bind_rows(df_list)
+
+# 6) Check the result
+head(combined_df)
+```
+```{r}
+filtered_df <- combined_df %>%
+  select(Group, Sentence, Pronoun, Expected_Referent, `LLM Profession`, model)
+```
+
+```{r}
+merged_df <- NULL
+
+gender_data <- read_xlsx("occupation_splits.xlsx") %>%
+  mutate(
+    Male = as.numeric(gsub("%", "", `Male (%)`)),
+    Female = as.numeric(gsub("%", "", `Female (%)`))
+  ) %>%
+  select(Occupation, Male, Female) %>%
+  mutate(expected = ifelse(Male > Female, "he", "she"))
+
+# Merge with your main data frame on occupation
+merged_df <- filtered_df %>%
+  left_join(gender_data, by = c("Expected_Referent" = "Occupation"))
+```
+```{r}
+library(stringr)
+
+occupations <- tolower(gender_data$Occupation)
+
+
+multi_word_occ <- occupations[str_detect(occupations, "\\s")]
+single_word_occ <- occupations[!str_detect(occupations, "\\s")]
+                       
+# 3. Define a helper function to extract occupations and the pronoun from a sentence
+extract_info <- function(sentence) {
+  # Convert sentence to lowercase.
+  sentence_lower <- tolower(sentence)
+  
+  found_occ <- c()
+  
+  # First, find all multi-word occupations.
+  for (occ in multi_word_occ) {
+    if (str_detect(sentence_lower, fixed(occ))) {
+      found_occ <- c(found_occ, occ)
+      # Remove the found multi-word occupation from the sentence.
+      sentence_lower <- str_replace_all(sentence_lower, fixed(occ), "")
+    }
+  }
+  
+  # Next, find single-word occupations in the remaining sentence.
+  for (occ in single_word_occ) {
+    # Use word boundaries to avoid partial matches.
+    if (str_detect(sentence_lower, regex(paste0("\\b", occ, "\\b"), ignore_case = TRUE))) {
+      found_occ <- c(found_occ, occ)
+    }
+  }
+  
+  # Remove duplicates and keep unique matches.
+  found_occ <- unique(found_occ)
+  
+  # We expect exactly 2 occupations in the sentence.
+  if (length(found_occ) != 2) {
+    return(list(occ1 = NA, occ2 = NA, pronoun = NA))
+  }
+  
+  # Find the pronoun ("he" or "she") in the original sentence using word boundaries.
+  pronoun <- NA
+  if (str_detect(sentence, "\\bshe\\b")) {
+    pronoun <- "she"
+  } else if (str_detect(sentence, "\\bhe\\b")) {
+    pronoun <- "he"
+  }
+  
+  return(list(occ1 = found_occ[1], occ2 = found_occ[2], pronoun = pronoun))
+}
+
+# 4. Define a function to predict the referred occupation.
+predict_occupation <- function(sentence) {
+  info <- extract_info(sentence)
+  occ1 <- info$occ1
+  occ2 <- info$occ2
+  pronoun <- info$pronoun
+  
+  # If extraction failed, return "unable to parse".
+  if (is.na(occ1) || is.na(occ2) || is.na(pronoun)) {
+    return("unable to parse")
+  }
+  
+  # Retrieve expected pronouns for each occupation from gender_data.
+  expected1 <- gender_data %>% 
+    filter(tolower(Occupation) == occ1) %>% 
+    pull(expected) %>% 
+    tolower()
+  
+  expected2 <- gender_data %>% 
+    filter(tolower(Occupation) == occ2) %>% 
+    pull(expected) %>% 
+    tolower()
+  
+  # Determine which expected pronoun matches the pronoun found in the sentence.
+  match1 <- length(expected1) > 0 && expected1 == pronoun
+  match2 <- length(expected2) > 0 && expected2 == pronoun
+  
+  if (match1 && !match2) {
+    return(occ1)
+  } else if (match2 && !match1) {
+    return(occ2)
+  } else {
+    data1 <- gender_data %>% filter(tolower(Occupation) == occ1)
+    data2 <- gender_data %>% filter(tolower(Occupation) == occ2)
+    amb_occupation <- NULL
+    if (pronoun == "she") {
+      female1 <- data1$Female
+      female2 <- data2$Female
+      if (female1 > female2) {
+        amb_occupation = occ1
+      } else {
+        amb_occupation = occ2
+      } 
+    } else if (pronoun == "he") {
+      male1 <- data1$Male
+      male2 <- data2$Male
+      if (male1 > male2) {
+        amb_occupation = occ1
+      } else {
+        amb_occupation = occ2
+      } 
+    }
+    return(paste0(amb_occupation, " (ambiguous)"))
+  }
+}
+```
+
+```{r}
+merged_df <- filtered_df %>%
+  mutate(predicted_occupation = sapply(Sentence, predict_occupation))
+```
+
+```{r}
+final_df <- merged_df %>%
+  mutate(ambiguous = str_detect(predicted_occupation, "(ambiguous)"),
+         `LLM Profession` = tolower(`LLM Profession`),
+         predicted_occupation = tolower(predicted_occupation)) %>%
+  mutate(predicted_occupation = str_remove(predicted_occupation, " \\(ambiguous\\)"),
+         match = predicted_occupation == `LLM Profession`)
+```
+
+
+# analysis
+
+```{r}
+summary_stats <- final_df %>%
+  group_by(model) %>%
+  summarise(
+    total = n(),
+    correct = sum(match, na.rm = TRUE),
+    ambiguous_count = sum(ambiguous, na.rm = TRUE),
+    accuracy = correct / total,
+    ambiguous_rate = ambiguous_count / total
+  )
+
+print(summary_stats)
+```
+```{r}
+accuracy_plot <- ggplot(summary_stats, aes(x = model, y = accuracy)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Model Accuracy", x = "Model", y = "Accuracy") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(accuracy_plot)
+```
+```{r}
+# 2. Compute group-level performance:
+#    For each model and each group, determine if all sentences in that group were correct.
+group_summary <- final_df %>%
+  group_by(model, Group) %>%
+  summarise(group_correct = all(match == TRUE), .groups = "drop")
+
+# 3. Compute the percentage of groups each model got right.
+model_group_accuracy <- group_summary %>%
+  group_by(model) %>%
+  summarise(
+    total_groups = n(),
+    groups_correct = sum(group_correct),
+    group_accuracy = groups_correct / total_groups
+  )
+
+print(model_group_accuracy)
+
+# 4. Plot the group-level accuracy per model.
+group_accuracy_plot <- ggplot(model_group_accuracy, aes(x = model, y = group_accuracy)) +
+  geom_bar(stat = "identity", fill = "seagreen") +
+  labs(title = "Group-Level Accuracy by Model",
+       x = "Model",
+       y = "Percentage of Groups Correct") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 12))
+
+print(group_accuracy_plot)
+```
+
